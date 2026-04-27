@@ -21,7 +21,7 @@ KEYWORDS = [
     "optical wireless communication",
     "LED communication",
     "V2X optical vehicular communication",
-    "intelligent surface communication ISC",
+    "intelligent communication ISC",
 ]
 
 
