@@ -104,6 +104,36 @@ def search_papers(keyword: str, days: int = SEARCH_DAYS) -> list[arxiv.Result]:
     return papers
 
 
+def ensure_schema(token: str, database_id: str) -> None:
+    resp = requests.get(f"{NOTION_API}/databases/{database_id}", headers=notion_headers(token))
+    resp.raise_for_status()
+    existing = resp.json().get("properties", {})
+
+    update: dict = {"properties": {}}
+
+    # Rename default 'Name' property to 'Title'
+    if "Name" in existing and "Title" not in existing:
+        update["properties"]["Name"] = {"name": "Title"}
+
+    # Add missing columns
+    needed = {
+        "Authors":  {"rich_text": {}},
+        "Abstract": {"rich_text": {}},
+        "URL":      {"url": {}},
+        "Published":{"date": {}},
+        "Keywords": {"multi_select": {}},
+        "arXiv ID": {"rich_text": {}},
+    }
+    for name, schema in needed.items():
+        if name not in existing:
+            update["properties"][name] = schema
+
+    if update["properties"]:
+        r = requests.patch(f"{NOTION_API}/databases/{database_id}", headers=notion_headers(token), json=update)
+        r.raise_for_status()
+        print("Database schema updated.")
+
+
 def main() -> None:
     token = os.environ.get("NOTION_TOKEN")
     database_id = os.environ.get("NOTION_DATABASE_ID")
@@ -111,15 +141,7 @@ def main() -> None:
         print("Error: set NOTION_TOKEN and NOTION_DATABASE_ID.")
         sys.exit(1)
 
-    # Print database schema to verify property names
-    db_resp = requests.get(
-        f"{NOTION_API}/databases/{database_id}",
-        headers=notion_headers(token),
-    )
-    db_resp.raise_for_status()
-    props = db_resp.json().get("properties", {})
-    print("Database properties:", {k: v["type"] for k, v in props.items()})
-
+    ensure_schema(token, database_id)
     existing_ids = get_existing_ids(token, database_id)
     print(f"Existing papers in Notion: {len(existing_ids)}")
 
