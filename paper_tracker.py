@@ -128,8 +128,13 @@ def main() -> None:
                 existing_ids.add(paper.entry_id)
                 added += 1
                 print(f"  + {paper.title[:70]}...")
+            except requests.exceptions.HTTPError as e:
+                print(f"  Failed to add: {e}")
+                print(f"  Notion response: {e.response.text[:500]}")
+                break  # Only show first error per keyword
             except Exception as e:
                 print(f"  Failed to add: {e}")
+                break
 
     print(f"\nDone. Added {added} new paper(s).")
 
