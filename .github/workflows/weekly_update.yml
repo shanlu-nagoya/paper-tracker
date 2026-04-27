@@ -19,6 +19,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Debug
+        run: |
+          echo "=== requirements.txt ==="
+          cat requirements.txt
+          echo "=== paper_tracker.py line 95-105 ==="
+          sed -n '95,105p' paper_tracker.py
+          echo "=== installed packages ==="
+          pip list | grep -i notion
+
       - name: Run paper tracker
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
