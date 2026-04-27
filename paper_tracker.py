@@ -82,6 +82,8 @@ def add_paper(token: str, database_id: str, paper: arxiv.Result, keyword: str) -
         headers=notion_headers(token),
         json=body,
     )
+    if not resp.ok:
+        print(f"  Notion error body: {resp.text[:800]}")
     resp.raise_for_status()
 
 
