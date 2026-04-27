@@ -111,6 +111,15 @@ def main() -> None:
         print("Error: set NOTION_TOKEN and NOTION_DATABASE_ID.")
         sys.exit(1)
 
+    # Print database schema to verify property names
+    db_resp = requests.get(
+        f"{NOTION_API}/databases/{database_id}",
+        headers=notion_headers(token),
+    )
+    db_resp.raise_for_status()
+    props = db_resp.json().get("properties", {})
+    print("Database properties:", {k: v["type"] for k, v in props.items()})
+
     existing_ids = get_existing_ids(token, database_id)
     print(f"Existing papers in Notion: {len(existing_ids)}")
 
