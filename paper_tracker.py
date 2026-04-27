@@ -1,18 +1,20 @@
 """
-Weekly arXiv paper tracker — syncs new papers to a Notion database.
+Weekly Semantic Scholar paper tracker — syncs new papers to a Notion database.
 Searches papers published in the last SEARCH_DAYS days and adds any
-not already present in Notion (deduplication via arXiv ID).
+not already present (deduplication via Semantic Scholar paper ID).
 """
 
 import os
 import sys
+import time
 import requests
-import arxiv
 from datetime import datetime, timedelta, timezone
 
 NOTION_API = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
+S2_API = "https://api.semanticscholar.org/graph/v1"
 SEARCH_DAYS = 8
+S2_FIELDS = "title,authors,abstract,publicationDate,externalIds,paperId"
 
 KEYWORDS = [
     "visible light communication VLC",
@@ -31,6 +33,45 @@ def notion_headers(token: str) -> dict:
     }
 
 
+def ensure_schema(token: str, database_id: str) -> None:
+    resp = requests.get(f"{NOTION_API}/databases/{database_id}", headers=notion_headers(token))
+    resp.raise_for_status()
+    existing = set(resp.json().get("properties", {}).keys())
+
+    update: dict = {"properties": {}}
+
+    if "Name" in existing and "Title" not in existing:
+        update["properties"]["Name"] = {"name": "Title"}
+        existing.add("Title")
+        existing.discard("Name")
+
+    if "arXiv ID" in existing and "Paper ID" not in existing:
+        update["properties"]["arXiv ID"] = {"name": "Paper ID"}
+        existing.add("Paper ID")
+        existing.discard("arXiv ID")
+
+    needed = {
+        "Authors":  {"rich_text": {}},
+        "Abstract": {"rich_text": {}},
+        "URL":      {"url": {}},
+        "Published":{"date": {}},
+        "Keywords": {"multi_select": {}},
+        "Paper ID": {"rich_text": {}},
+    }
+    for name, schema in needed.items():
+        if name not in existing:
+            update["properties"][name] = schema
+
+    if update["properties"]:
+        r = requests.patch(
+            f"{NOTION_API}/databases/{database_id}",
+            headers=notion_headers(token),
+            json=update,
+        )
+        r.raise_for_status()
+        print("Database schema updated.")
+
+
 def get_existing_ids(token: str, database_id: str) -> set[str]:
     existing: set[str] = set()
     cursor = None
@@ -46,7 +87,7 @@ def get_existing_ids(token: str, database_id: str) -> set[str]:
         resp.raise_for_status()
         data = resp.json()
         for page in data["results"]:
-            prop = page["properties"].get("arXiv ID", {})
+            prop = page["properties"].get("Paper ID", {})
             rich_text = prop.get("rich_text", [])
             if rich_text:
                 existing.add(rich_text[0]["text"]["content"])
@@ -56,82 +97,62 @@ def get_existing_ids(token: str, database_id: str) -> set[str]:
     return existing
 
 
-def format_authors(paper: arxiv.Result) -> str:
-    names = [a.name for a in paper.authors[:5]]
+def search_papers(keyword: str, days: int = SEARCH_DAYS) -> list[dict]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    params = {
+        "query": keyword,
+        "fields": S2_FIELDS,
+        "limit": 50,
+        "publicationDateOrYear": f"{cutoff}:",
+    }
+    resp = requests.get(f"{S2_API}/paper/search", params=params)
+    resp.raise_for_status()
+    return resp.json().get("data", [])
+
+
+def format_authors(authors: list[dict]) -> str:
+    names = [a.get("name", "") for a in authors[:5]]
     result = ", ".join(names)
-    if len(paper.authors) > 5:
-        result += f" et al. (+{len(paper.authors) - 5})"
+    if len(authors) > 5:
+        result += f" et al. (+{len(authors) - 5})"
     return result
 
 
-def add_paper(token: str, database_id: str, paper: arxiv.Result, keyword: str) -> None:
-    body = {
-        "parent": {"database_id": database_id},
-        "properties": {
-            "Title":    {"title":     [{"text": {"content": paper.title[:2000]}}]},
-            "Authors":  {"rich_text": [{"text": {"content": format_authors(paper)[:2000]}}]},
-            "Abstract": {"rich_text": [{"text": {"content": paper.summary[:2000]}}]},
-            "URL":      {"url": paper.entry_id},
-            "Published":{"date": {"start": paper.published.strftime("%Y-%m-%d")}},
-            "Keywords": {"multi_select": [{"name": keyword}]},
-            "arXiv ID": {"rich_text": [{"text": {"content": paper.entry_id}}]},
-        },
+def paper_url(paper: dict) -> str:
+    ext = paper.get("externalIds") or {}
+    if ext.get("DOI"):
+        return f"https://doi.org/{ext['DOI']}"
+    if ext.get("ArXiv"):
+        return f"https://arxiv.org/abs/{ext['ArXiv']}"
+    return f"https://www.semanticscholar.org/paper/{paper.get('paperId', '')}"
+
+
+def add_paper(token: str, database_id: str, paper: dict, keyword: str) -> None:
+    title = (paper.get("title") or "Untitled")[:2000]
+    authors = format_authors(paper.get("authors") or [])
+    abstract = (paper.get("abstract") or "")[:2000]
+    paper_id = paper.get("paperId", "")
+    pub_date = paper.get("publicationDate")
+
+    properties: dict = {
+        "Title":    {"title":     [{"text": {"content": title}}]},
+        "Authors":  {"rich_text": [{"text": {"content": authors[:2000]}}]},
+        "Abstract": {"rich_text": [{"text": {"content": abstract}}]},
+        "URL":      {"url": paper_url(paper)},
+        "Keywords": {"multi_select": [{"name": keyword}]},
+        "Paper ID": {"rich_text": [{"text": {"content": paper_id}}]},
     }
+    if pub_date:
+        properties["Published"] = {"date": {"start": pub_date}}
+
     resp = requests.post(
         f"{NOTION_API}/pages",
         headers=notion_headers(token),
-        json=body,
+        json={"parent": {"database_id": database_id}, "properties": properties},
     )
     if not resp.ok:
-        print(f"  Notion error body: {resp.text[:800]}")
+        print(f"  Notion error: {resp.text[:300]}")
     resp.raise_for_status()
-
-
-def search_papers(keyword: str, days: int = SEARCH_DAYS) -> list[arxiv.Result]:
-    client = arxiv.Client()
-    search = arxiv.Search(
-        query=keyword,
-        max_results=30,
-        sort_by=arxiv.SortCriterion.SubmittedDate,
-        sort_order=arxiv.SortOrder.Descending,
-    )
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    papers = []
-    for result in client.results(search):
-        if result.published < cutoff:
-            break
-        papers.append(result)
-    return papers
-
-
-def ensure_schema(token: str, database_id: str) -> None:
-    resp = requests.get(f"{NOTION_API}/databases/{database_id}", headers=notion_headers(token))
-    resp.raise_for_status()
-    existing = resp.json().get("properties", {})
-
-    update: dict = {"properties": {}}
-
-    # Rename default 'Name' property to 'Title'
-    if "Name" in existing and "Title" not in existing:
-        update["properties"]["Name"] = {"name": "Title"}
-
-    # Add missing columns
-    needed = {
-        "Authors":  {"rich_text": {}},
-        "Abstract": {"rich_text": {}},
-        "URL":      {"url": {}},
-        "Published":{"date": {}},
-        "Keywords": {"multi_select": {}},
-        "arXiv ID": {"rich_text": {}},
-    }
-    for name, schema in needed.items():
-        if name not in existing:
-            update["properties"][name] = schema
-
-    if update["properties"]:
-        r = requests.patch(f"{NOTION_API}/databases/{database_id}", headers=notion_headers(token), json=update)
-        r.raise_for_status()
-        print("Database schema updated.")
 
 
 def main() -> None:
@@ -150,27 +171,26 @@ def main() -> None:
         print(f"Searching: {keyword}")
         try:
             papers = search_papers(keyword)
+            time.sleep(1)
         except Exception as e:
             print(f"  Search failed: {e}")
             continue
+
         for paper in papers:
-            if paper.entry_id in existing_ids:
+            paper_id = paper.get("paperId", "")
+            if not paper_id or paper_id in existing_ids:
                 continue
             try:
                 add_paper(token, database_id, paper, keyword)
-                existing_ids.add(paper.entry_id)
+                existing_ids.add(paper_id)
                 added += 1
-                print(f"  + {paper.title[:70]}...")
-            except requests.exceptions.HTTPError as e:
-                print(f"  Failed to add: {e}")
-                print(f"  Notion response: {e.response.text[:500]}")
-                break  # Only show first error per keyword
+                print(f"  + {(paper.get('title') or '')[:70]}...")
             except Exception as e:
-                print(f"  Failed to add: {e}")
-                break
+                print(f"  Failed: {e}")
 
     print(f"\nDone. Added {added} new paper(s).")
 
 
 if __name__ == "__main__":
     main()
+```
