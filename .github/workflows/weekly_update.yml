@@ -2,21 +2,32 @@ name: Weekly Paper Update
 
 on:
   schedule:
-    - cron: '0 9 * * 1'
+    - cron: '0 9 * * 1'  # Every Monday 9:00 UTC (18:00 JST)
   workflow_dispatch:
 
 jobs:
   update-papers:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
+
       - name: Run paper tracker
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
         run: python paper_tracker.py
+
+      - name: Commit and push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add papers_index.csv paper_summaries/ weekly_reports/
+          git diff --staged --quiet || git commit -m "Weekly paper update $(date +%Y-%m-%d)"
+          git push
