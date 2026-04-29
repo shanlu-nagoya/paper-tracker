@@ -1,194 +1,82 @@
 # Paper Tracker
 
-A personal research paper tracking system that automatically fetches new papers from [Semantic Scholar](https://www.semanticscholar.org/), organizes them by topic, generates markdown summaries, and provides a local search tool.
+A research paper tracking system that automatically fetches new papers from [Semantic Scholar](https://www.semanticscholar.org/), organizes them by topic, and provides a local search tool.
 
 ---
 
-## Table of Contents
+## For Students: How to Use
 
-- [Project Structure](#project-structure)
-- [Quick Start: Search Only (Another Computer)](#quick-start-search-only-another-computer)
-- [Full Setup: Running the Tracker](#full-setup-running-the-tracker)
-- [Search Tool Usage](#search-tool-usage)
-- [Research Topics](#research-topics)
-- [Output Files](#output-files)
+### Step 1 — Install Python (one time only)
 
----
+Download and install Python 3.8 or later from https://www.python.org/downloads/
 
-## Project Structure
-
-```
-paper-tracker/
-├── paper_tracker.py        # Main script — fetches papers from Semantic Scholar
-├── papers_index.csv        # Central database (all papers)
-├── scripts/
-│   └── search_papers.py    # Local search tool
-├── paper_summaries/        # Auto-generated markdown summaries, by topic
-│   ├── 01_intent_communication/
-│   ├── 02_v2x_safety/
-│   ├── 03_vlc_isc/
-│   ├── 04_mission_reliability/
-│   ├── 05_non_ergodic_channels/
-│   ├── 06_importance_aware_coding/
-│   └── 07_ai_for_comm_design/
-├── weekly_reports/         # Auto-generated weekly reports
-├── templates/              # Markdown templates
-└── pdfs/                   # (Manual) store PDF files here
-```
-
----
-
-## Quick Start: Search Only (Another Computer)
-
-If you only want to **search the existing paper database** on a new machine, you do not need any API keys or a full setup. Follow these steps:
-
-### Step 1 — Install Python
-
-Make sure Python 3.8 or later is installed.
-
+Check it works:
 ```bash
 python --version
 ```
 
-Download from https://www.python.org/downloads/ if needed.
-
-### Step 2 — Get the project files
-
-**Option A — Clone from GitHub (recommended):**
+### Step 2 — Clone this repository (one time only)
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/shanlu-nagoya/paper-tracker.git
 cd paper-tracker
 ```
 
-**Option B — Copy files manually:**
+### Step 3 — Search for papers
 
-Copy the following files/folders from the original machine to the new machine, preserving the folder structure:
-
-```
-paper-tracker/
-├── papers_index.csv          ← required
-├── scripts/search_papers.py  ← required
-└── paper_summaries/          ← optional, for reading full summaries
-```
-
-### Step 3 — No installation needed
-
-The search tool only uses Python's built-in libraries (`csv`, `argparse`, `pathlib`). No `pip install` required.
-
-### Step 4 — Run a search
-
-Open a terminal, navigate to the `paper-tracker` folder, and run:
+Open a terminal in the `paper-tracker` folder and run:
 
 ```bash
+# Single keyword
 python scripts/search_papers.py "VLC"
-```
 
----
-
-## Full Setup: Running the Tracker
-
-Follow this if you want to **fetch new papers** from Semantic Scholar automatically.
-
-### Step 1 — Clone the repository
-
-```bash
-git clone <your-repo-url>
-cd paper-tracker
-```
-
-### Step 2 — Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-This installs `requests`, the only external dependency.
-
-### Step 3 — Run the tracker
-
-```bash
-python paper_tracker.py
-```
-
-The script will:
-
-1. Query Semantic Scholar for papers published in the last 8 days across all configured topics
-2. Skip papers already in `papers_index.csv`
-3. Append new papers to `papers_index.csv`
-4. Generate a markdown summary for each new paper in `paper_summaries/<topic>/`
-5. Generate a weekly report in `weekly_reports/`
-
-> **Note:** The script respects Semantic Scholar's rate limit with a 1-second delay between API calls. No API key is required.
-
----
-
-## Search Tool Usage
-
-All searches are run from the `paper-tracker/` directory.
-
-### Basic keyword search
-
-```bash
-python scripts/search_papers.py "VLC"
-```
-
-### Multiple keywords — AND logic (default)
-
-Returns papers that contain **all** of the keywords:
-
-```bash
+# Multiple keywords — AND logic (must match all)
 python scripts/search_papers.py "VLC" "RIS"
-python scripts/search_papers.py "VLC" "channel estimation" "deep learning"
-```
 
-### Multiple keywords — OR logic
-
-Returns papers that contain **any** of the keywords:
-
-```bash
+# Multiple keywords — OR logic (match any)
 python scripts/search_papers.py "VLC" "LiFi" --any
-```
 
-### Filter by topic folder
-
-```bash
+# Filter by topic
 python scripts/search_papers.py --topic 03_vlc_isc
-python scripts/search_papers.py "RIS" --topic 01_intent_communication
-```
 
-### Filter by year
+# Filter by year
+python scripts/search_papers.py "VLC" --year 2026
 
-```bash
-python scripts/search_papers.py "VLC" --year 2025
-python scripts/search_papers.py --year 2026
-```
-
-### Filter by author
-
-```bash
+# Filter by author
 python scripts/search_papers.py --author "Wang"
-python scripts/search_papers.py "VLC" --author "Li"
+
+# Combine filters
+python scripts/search_papers.py "VLC" "RIS" --year 2026
 ```
 
-### Combine filters
+No `pip install` needed — the search tool uses only Python built-in libraries.
 
-```bash
-python scripts/search_papers.py "VLC" "RIS" --year 2026 --author "Zhang"
-python scripts/search_papers.py --topic 03_vlc_isc --year 2025
-```
+### Step 4 — Read the summary
 
-### Example output
+The search result shows a `Summary` path like:
 
 ```
-Found 3 paper(s):
-------------------------------------------------------------
-[03_vlc_isc] Adaptive partitioning for reconfigurable intelligent surface aided integrated sensing and communication (2026)
+[03_vlc_isc] Adaptive partitioning for reconfigurable intelligent surface... (2026)
   Authors : Mert Ilgüy, Berna Özbek
   Venue   : Physical Communication
   Added   : 2026-04-29
-  Summary : paper_summaries/03_vlc_isc/368a9bec_Adaptive_partitioning_for_reconfigurable_intelligent_surface.md
-  PDF     : (Google Drive link if available)
+  Summary : paper_summaries/03_vlc_isc/368a9bec_Adaptive_partitioning_...md
+```
+
+Open that `.md` file to read the abstract, metadata, and notes.
+
+### Step 5 — Read the full PDF
+
+Open the shared OneDrive folder and find the PDF under `pdfs/<topic>/`.
+Papers that are open-access (e.g., arXiv) are downloaded automatically.
+Others need to be accessed via the journal website.
+
+### Step 6 — Sync new papers (run weekly)
+
+When new papers are added to the database, just run:
+
+```bash
+git pull
 ```
 
 ---
@@ -207,17 +95,34 @@ Found 3 paper(s):
 
 ---
 
-## Output Files
+## For the Lab Manager: Updating the Database
 
-| File / Folder | Description |
-|---------------|-------------|
-| `papers_index.csv` | Master database — one row per paper with title, authors, year, venue, topic, abstract snippet, links, and path to summary |
-| `paper_summaries/<topic>/<id>_<title>.md` | Individual paper summary with metadata, abstract, and a notes section |
-| `weekly_reports/<date>_weekly_report.md` | Weekly digest grouped by topic |
+### Fetch new papers (run weekly)
 
----
+```bash
+pip install -r requirements.txt   # first time only
+python paper_tracker.py
+```
 
-## Requirements
+This will:
+1. Search Semantic Scholar for papers published in the last 8 days
+2. Add new papers to `papers_index.csv`
+3. Generate a markdown summary for each paper in `paper_summaries/<topic>/`
+4. Auto-download open-access PDFs to OneDrive
+5. Generate a weekly report in `weekly_reports/`
 
-- Python 3.8+
-- `requests>=2.31.0` (only needed for `paper_tracker.py`, not for search)
+### Download PDFs for existing papers
+
+```bash
+python scripts/download_pdfs.py
+```
+
+### Commit and push updates to GitHub
+
+```bash
+git add papers_index.csv paper_summaries/ weekly_reports/
+git commit -m "Weekly paper update $(date +%Y-%m-%d)"
+git push
+```
+
+Students can then sync with `git pull`.
