@@ -24,7 +24,7 @@ def search(query: str = "", topic: str = "", year: str = "", author: str = "") -
     results = []
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            searchable = (row["title"] + row["abstract"] + row["keyword_matched"]).lower()
+            searchable = (row["title"] + row["abstract"] + row["keyword_matched"] + row["topic_folder"] + row["topic"]).lower()
             if query and query.lower() not in searchable:
                 continue
             if topic and topic.lower() not in row["topic_folder"].lower():
