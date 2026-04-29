@@ -80,12 +80,14 @@ CSV_FIELDS = [
     "id", "title", "authors", "year", "venue",
     "topic", "topic_folder", "keyword_matched",
     "abstract", "semantic_scholar_id", "arxiv_id", "doi", "url",
-    "gdrive_link", "date_added", "summary_file",
+    "gdrive_link", "date_added", "summary_file", "pdf_path",
 ]
 
 SS_API = "https://api.semanticscholar.org/graph/v1/paper/search"
-SS_FIELDS = "paperId,title,authors,year,venue,abstract,externalIds"
+SS_FIELDS = "paperId,title,authors,year,venue,abstract,externalIds,openAccessPdf"
 DAYS_BACK = 8
+
+ONEDRIVE_PDF_DIR = Path(r"C:\Users\shanl\OneDrive - 国立大学法人東海国立大学機構\paper-tracker\pdfs")
 RESULTS_PER_QUERY = 20
 
 
@@ -129,6 +131,51 @@ def format_authors(paper: dict) -> str:
     if len(authors) > 5:
         result += f" et al. (+{len(authors) - 5})"
     return result
+
+
+def download_pdf(paper: dict, topic_folder: str, title: str) -> str:
+    """Try to download open-access PDF. Returns local path or empty string."""
+    pdf_url = ""
+
+    oa = paper.get("openAccessPdf") or {}
+    if oa.get("url"):
+        pdf_url = oa["url"]
+
+    if not pdf_url:
+        ext = paper.get("externalIds") or {}
+        arxiv_id = ext.get("ArXiv", "")
+        if arxiv_id:
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+
+    if not pdf_url:
+        return ""
+
+    safe = "".join(c if c.isalnum() or c in " -_" else "" for c in title)
+    safe = safe.strip().replace(" ", "_")[:60]
+    filename = f"{paper.get('paperId', 'unknown')[:8]}_{safe}.pdf"
+
+    dest_dir = ONEDRIVE_PDF_DIR / topic_folder
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / filename
+
+    if dest.exists():
+        return str(dest)
+
+    try:
+        resp = requests.get(pdf_url, timeout=60, stream=True,
+                            headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "pdf" not in content_type and not pdf_url.lower().endswith(".pdf"):
+            return ""
+        with open(dest, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print(f"    [PDF] Downloaded → {dest.name}")
+        return str(dest)
+    except Exception as e:
+        print(f"    [PDF] Skipped ({e})")
+        return ""
 
 
 def make_summary_path(topic_folder: str, paper_id: str, title: str) -> Path:
@@ -231,12 +278,14 @@ def main() -> None:
 
                 authors = format_authors(paper)
                 ext = paper.get("externalIds") or {}
-                summary_path = make_summary_path(topic_folder, pid, paper.get("title", ""))
+                title = paper.get("title", "")
+                summary_path = make_summary_path(topic_folder, pid, title)
                 write_summary(summary_path, paper, topic_name, keyword)
+                pdf_path = download_pdf(paper, topic_folder, title)
 
                 row = {
                     "id": next_id,
-                    "title": paper.get("title", ""),
+                    "title": title,
                     "authors": authors,
                     "year": paper.get("year", ""),
                     "venue": paper.get("venue", ""),
@@ -251,6 +300,7 @@ def main() -> None:
                     "gdrive_link": "",
                     "date_added": datetime.now().strftime("%Y-%m-%d"),
                     "summary_file": str(summary_path).replace("\\", "/"),
+                    "pdf_path": pdf_path,
                 }
                 new_rows.append(row)
                 next_id += 1
